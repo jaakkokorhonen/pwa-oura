@@ -1,6 +1,6 @@
 # Oura Weekly Cycle PWA — Graafiset Use Case -kuvaukset (MVP)
 
-Tämä dokumentti kuvaa graafisesti ja teknisesti 15 heti toteutettavaa toimintoa, jotka hyödyntävät `weekly-cycle-oura-skill`-datakerrosta **nopeamman Firebase GraphQL -rajapinnan** kautta.
+Tämä dokumentti kuvaa graafisesti ja teknisesti 15 + 1 heti toteutettavaa toimintoa, jotka hyödyntävät `weekly-cycle-oura-skill`-datakerrosta **nopeamman Firebase GraphQL -rajapinnan** kautta.
 
 Käyttöliittymä noudattaa [weekly-cycle-oura-web](file:///Users/jaakkokorhonen/uutisseuranta/weekly-cycle-oura-web)-projektin mukaista visuaalista linjaa:
 *   **Tausta:** Oura Black (`#151619`)
@@ -43,7 +43,7 @@ sequenceDiagram
 
 ---
 
-## 2. Graafiset use case -kuvaukset (15 toimintoa)
+## 2. Graafiset use case -kuvaukset (16 toimintoa)
 
 ### A. Palautumisen & valmiuden seuranta (Toiminnot 1–2)
 
@@ -152,32 +152,37 @@ stateDiagram-v2
 
 ---
 
-### D. Viikkorytmin analyysi (Toiminto 15)
+### D. Viikkorytmin analyysi & synkronointi (Toiminnot 15–16)
 
 #### 15. Viikonloppusykli (La/Su/Ma-vertailu)
 *   **Kuvaus:** Visualisoi viikonlopun siirtymän vaikutuksen fysiologiaan (lauantain kuormitus, sunnuntain korjausuni ja maanantain käynnistymisvalmius).
 *   **Visualisointi:** Kolmipalkkinen vertailukortti (Lauantai vs Sunnuntai vs Maanantai).
-
-```
-+-------------------------------------------------------------+
-| VIIKKONLOPPUSYKLI (La/Su/Ma)                                |
-|                                                             |
-| Lauantai (Aktiivinen)   | [======== 85 ] (Living Coral)     |
-| Sunnuntai (Palautuminen)| [============= 92 ] (Ensō Blue)   |
-| Maanantai (Tulos)       | [====== 74 ] (Sandstone)          |
-+-------------------------------------------------------------+
-```
 *   **GraphQL Query:** `getEventsRange(start, end)` ja `getDayRecord` viikonlopun ja maanantain päiviltä.
+
+#### 16. Oura-tietojen synkronoinnin käynnistys PWA-sovelluksesta
+*   **Kuvaus:** Käyttäjä käynnistää reaaliaikaisen Oura-datan haun ja analyysiputken ajon suoraan PWA-käyttöliittymästä.
+*   **GraphQL Mutation:**
+    ```graphql
+    mutation SyncOura($date: String!) {
+      syncOuraData(date: $date) {
+        date
+        status
+        cycleState
+        metricsJson
+      }
+    }
+    ```
 
 ---
 
 ## 3. PWA-ruudun layout-malli (Lankaversio)
 
-Tämä lankaversio havainnollistaa, miten yllä olevat 15 toimintoa sijoittuvat näytölle [weekly-cycle-oura-web](file:///Users/jaakkokorhonen/uutisseuranta/weekly-cycle-oura-web)-tyyleillä ja Firebase GraphQL -dataliitännällä:
+Tämä lankaversio havainnollistaa, miten yllä olevat 15 + 1 toimintoa sijoittuvat näytölle [weekly-cycle-oura-web](file:///Users/jaakkokorhonen/uutisseuranta/weekly-cycle-oura-web)-tyyleillä ja Firebase GraphQL -dataliitännällä:
 
 ```
 +-------------------------------------------------------------+
 |  Oura Weekly Cycle PWA [Ensō Blue Ring]     User: jaakko    |
+|  [ Päivitä tiedot ] (Sync Button)                           |
 +-------------------------------------------------------------+
 |  [30 pv] [90 pv] [180 pv]             Päivämäärä: 2026-07-20|
 +-------------------------------------------------------------+

@@ -1,6 +1,6 @@
 # GitHub Issues: Oura Weekly Cycle PWA (GraphQL API & GH Pages Compatible)
 
-Tämä tiedosto sisältää kuvaukset 15 issuelle, jotka on sovitettu toimimaan staattisessa PWA-ympäristössä (GitHub Pages -isännöinti), jossa tietoliikenne ja tallennus tapahtuvat nopean **Firebase GraphQL API:n** kautta.
+Tämä tiedosto sisältää kuvaukset 16 issuelle, jotka on sovitettu toimimaan staattisessa PWA-ympäristössä (GitHub Pages -isännöinti), jossa tietoliikenne ja tallennus tapahtuvat nopean **Firebase GraphQL API:n** kautta.
 
 ---
 
@@ -272,3 +272,23 @@ Toteutetaan vertailukortti, joka näyttää rinnakkain lauantain, sunnuntain ja 
     }
     ```
     *Huom: Haetaan myös `getDayRecord` lauantaille, sunnuntaille ja maanantaille fysiologian vertailua varten.*
+
+---
+
+### Issue 16: [Feature] Oura-tietojen synkronoinnin käynnistys PWA-sovelluksesta (syncOuraData)
+**Kuvaus:**  
+Toteutetaan painike Oura-datan manuaalisen synkronoinnin käynnistämiseksi suoraan PWA-sovelluksesta. Kysely liipaisee Google Cloud Runissa sijaitsevan rikastusputken ja päivittää Firestoren JSON-tietueet.
+
+**Tekniset vaatimukset:**
+*   Käyttöliittymä: Synkronointipainike latausanimaatiolla.
+*   **GraphQL Mutation:**
+    ```graphql
+    mutation SyncOura($date: String!) {
+      syncOuraData(date: $date) {
+        date
+        status
+        cycleState
+        metricsJson
+      }
+    }
+    ```
