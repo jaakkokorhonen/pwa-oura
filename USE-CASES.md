@@ -133,7 +133,7 @@ Symptom Radar ei ole erillinen API-endpoint — se rakentuu seuraavien endpointt
 | Hengitystaajuus | `/sleep` | `average_breath` |
 | Aktiivisuuslasku | `/daily_activity` | `score` |
 
-Sovellus laskee algoritmin näistä arvoista client-puolella tai Oura-pilvessä — tulosta ei palauteta suoraan APIsta erillisenä kentänä.
+Sovellus laskee algoritmin näistä arvoista client-puolella tai Oura-pilvessä — tulosta ei palauteta suoraan APIsta erillisenä kenttänä.
 
 **Viitteet:**
 - Quer et al. (2021), *Nature Scientific Reports*
@@ -328,7 +328,161 @@ Lämpötiladata tulee kahdesta paikasta:
 
 ---
 
-## 12. Oura Ring 5 (2026) — uudet ominaisuudet
+## 12. Mindfulness- ja hengityssessiot
+
+**Mitä mitataan:** Ohjattujen tai vapaiden hengitys-, meditaatio-, rentoutus- ja leposessioiden fysiologinen vaste session aikana.
+
+**Miten toimii:** Käyttäjä käynnistää sovelluksesta session, jonka aikana Oura kerää sydämen sykettä, HRV:tä ja joissain tapauksissa SpO2-dataa session aikajänteellä. Tämä täydentää passiivista palautumisen seurantaa mittaamalla akuutteja vaikutuksia.
+
+**Tunnistettu käyttötapaus:** Mindfulnessin, hengitysharjoitusten, palauttavien minitaukojen ja lyhyiden päiväunien vaikutuksen mittaaminen sekä stressinpurun akuutin vasteen arviointi.
+
+### API v2 — tietomallit
+
+**Endpoint:** `GET /v2/usercollection/session`
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `id` | string | Session tunniste |
+| `day` | date | Päivämäärä |
+| `start_datetime` | datetime | Session aloitusaika |
+| `end_datetime` | datetime | Session lopetusaika |
+| `type` | enum | `breathing` / `meditation` / `nap` / `rest` / `body_status` |
+| `heart_rate_data` | object | HR-aikasarja session ajalta |
+| `heart_rate_data.items[]` | float[] | Sykehavainnot |
+| `heart_rate_data.interval` | integer | Mittausväli sekunneissa |
+| `hrv_data` | object | HRV-aikasarja session ajalta |
+| `hrv_data.items[]` | float[] | HRV-havainnot |
+| `motion_count` | integer | Liikemäärä session aikana |
+| `average_heart_rate` | float | Keskimääräinen syke session aikana |
+| `average_hrv` | float | Keskimääräinen HRV session aikana |
+| `spo2_percentage` | object | Mahdollinen SpO2-yhteenveto |
+
+---
+
+## 13. Uniajan optimointi ja kronotyyppiohjaus
+
+**Mitä mitataan:** Suositeltu nukkumaanmenoikkuna ja optimaalinen uniaika käyttäjän rytmin perusteella.
+
+**Miten toimii:** Oura laskee käyttäjän aiemman unihistorian, sirkadiaanisen rytmin ja palautumisen perusteella suositellun bedtime window -ajan.
+
+**Tunnistettu käyttötapaus:** Käyttäjän unirytmin ohjaus, jet lag -toipuminen, epäsäännöllisen unirytmin korjaus ja parempi ajoitus nukkumaanmenolle.
+
+### API v2 — tietomallit
+
+**Endpoint:** `GET /v2/usercollection/sleep_time`
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `id` | string | Tietueen tunniste |
+| `day` | date | Päivämäärä |
+| `status` | enum | Suosituksen tila |
+| `recommendation` | object | Suosituksen sisältö |
+| `recommendation.bedtime_start` | datetime | Suositeltu nukkumaanmenoikkunan alku |
+| `recommendation.bedtime_end` | datetime | Suositeltu nukkumaanmenoikkunan loppu |
+| `recommendation.optimal_bedtime` | datetime | Optimaalinen nukkumaanmenoaika |
+
+---
+
+## 14. Lepotila ja sairausjakson kontekstointi
+
+**Mitä mitataan:** Käyttäjän aktivoimat lepotilajaksot, jolloin aktiivisuus- ja palautumisanalyysiä tulkitaan eri kontekstissa.
+
+**Miten toimii:** Käyttäjä aktivoi Rest Mode -tilan esimerkiksi sairauden, matkustuksen tai voimakkaan kuormituksen aikana. Oura säilyttää jakson historian erillisenä tietona.
+
+**Tunnistettu käyttötapaus:** Sairausjaksojen erottaminen normaalidatasta, palautumisen suojaaminen ja Readiness-/Activity-signaalien tulkinnan korjaus poikkeustilanteissa.
+
+### API v2 — tietomallit
+
+**Endpoint:** `GET /v2/usercollection/rest_mode_period`
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `id` | string | Jakson tunniste |
+| `start_day` | date | Lepotilan alkupäivä |
+| `end_day` | date | Lepotilan loppupäivä |
+| `state` | enum | `on` / `off` |
+
+---
+
+## 15. Tagit ja käyttäytymisen korrelaatioanalyysi
+
+**Mitä mitataan:** Käyttäjän itse kirjaamat tapahtumat, altisteet tai tottumukset aikaleimoina.
+
+**Miten toimii:** Käyttäjä lisää tageja kuten `coffee`, `alcohol`, `travel`, `stress`, `sauna`, `late_meal`. Näitä voidaan korreloida jälkikäteen uneen, HRV:hen, lämpötilaan ja Readinessiin.
+
+**Tunnistettu käyttötapaus:** N=1-analytiikka ja itsensä kvantifiointi: mitä vaikutuksia käyttäjän tietyillä rutiineilla on seuraavan yön uneen tai päivän palautumiseen.
+
+### API v2 — tietomallit
+
+**Endpoint:** `GET /v2/usercollection/tag`  
+**Endpoint:** `GET /v2/usercollection/enhanced_tag`
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `id` | string | Tagin tunniste |
+| `tag_type_code` | string | Tagin tyyppikoodi |
+| `text` | string | Tagin teksti |
+| `timestamp` | datetime | Tagin aikaleima |
+| `start_time` | datetime | Tapahtuman alkuaika |
+| `end_time` | datetime | Tapahtuman loppuaika |
+
+**Enhanced tag lisäkentät:**
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `source` | enum | Tagin lähde |
+| `category` | string | Laajempi luokka |
+| `sub_category` | string | Tarkempi alaluokka |
+
+---
+
+## 16. Personalisointiprofiili ja algoritmien kalibrointi
+
+**Mitä mitataan:** Käyttäjän perustiedot, joita käytetään baselinejen ja mallien kalibrointiin.
+
+**Miten toimii:** Oura tarvitsee demografisia ja antropometrisiä tietoja personoidakseen tulkintaa esimerkiksi VO2 max-, kalorikulutus- ja HRV-normituksissa.
+
+**Tunnistettu käyttötapaus:** Personalisointi, käyttäjäprofiilin konteksti, yksilöllisten viitearvojen muodostus ja integraatio muihin hyvinvointijärjestelmiin.
+
+### API v2 — tietomallit
+
+**Endpoint:** `GET /v2/usercollection/personal_info`
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `id` | string | Käyttäjän tunniste |
+| `age` | integer | Ikä |
+| `weight` | float | Paino |
+| `height` | float | Pituus |
+| `biological_sex` | enum | Biologinen sukupuoli |
+| `email` | string | Sähköpostiosoite |
+
+---
+
+## 17. Laitekonfiguraatio ja datan luotettavuuskonteksti
+
+**Mitä mitataan:** Käytössä olevan renkaan tekninen konfiguraatio.
+
+**Miten toimii:** API palauttaa laiteversion, firmwaren ja akun tilan. Näitä voidaan käyttää datan laadun seurantaan ja laiteominaisuuksien tunnistamiseen.
+
+**Tunnistettu käyttötapaus:** Laiteriippuvaisten ominaisuuksien hallinta, firmware-ongelmien diagnostiikka, datan laadun auditointi ja käyttöliittymän ominaisuuksien ehdollinen näyttäminen laiteversion perusteella.
+
+### API v2 — tietomallit
+
+**Endpoint:** `GET /v2/usercollection/ring_configuration`
+
+| Kenttä | Tyyppi | Kuvaus |
+|---|---|---|
+| `id` | string | Laitteen tunniste |
+| `color` | string | Renkaan väri |
+| `design` | string | Malli/design |
+| `firmware_version` | string | Firmware-versio |
+| `hardware_type` | string | Laitesukupolvi / hardware |
+| `set_up_at` | datetime | Käyttöönottoaika |
+
+---
+
+## 18. Oura Ring 5 (2026) — uudet ominaisuudet
 
 Kesäkuussa 2026 julkaistu Oura Ring 5 lisäsi seuraavat ominaisuudet, jotka ovat toistaiseksi tutkimus- tai kehitysvaiheessa:
 
@@ -358,6 +512,12 @@ Näistä ominaisuuksista ei ole vielä julkaistu avoimia vertaisarvioituja valid
 | SpO2 | `/daily_spo2` | `spo2_percentage.average` |
 | VO2 max | `/vo2_max` | `vo2_max` |
 | Kardiovaskulaarinen ikä | `/daily_cardiovascular_age` | `vascular_age` |
+| Sessionit | `/session` | `type`, `average_heart_rate`, `average_hrv` |
+| Uniaikasuositus | `/sleep_time` | `recommendation.optimal_bedtime` |
+| Lepotila | `/rest_mode_period` | `start_day`, `end_day`, `state` |
+| Tagit | `/tag`, `/enhanced_tag` | `text`, `timestamp`, `category` |
+| Personalisointi | `/personal_info` | `age`, `weight`, `height`, `biological_sex` |
+| Laitetiedot | `/ring_configuration` | `hardware_type`, `firmware_version`, `design` |
 
 ---
 
