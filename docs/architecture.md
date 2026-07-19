@@ -1,92 +1,56 @@
-# Arkkitehtuuri
+# Arkkitehtuuri — pwa-oura
 
-## Pipeline-yleiskuva
+> ADR: [#22](https://github.com/jaakkokorhonen/pwa-oura/issues/22)
+
+## Pipeline
 
 ```
 Oura API v2
-    │
-    ▼
-MQTT broker
-    │
-    ▼
-Ingest-palvelu  (Node.js / Go / Cloud Run)
-    │  parsii, validoi, kirjoittaa
-    ▼
-Firestore
-    │
-    ▼
-GraphQL API  (Apollo Server / Cloud Run)
-    │
-    ▼
-PWA-client  (Apollo Client)
+  └─► MQTT broker (HiveMQ Cloud)
+        └─► oura-ingest (Cloud Run, min-instances=1)
+              └─► Firestore (europe-north1)
+                    └─► oura-graphql (Cloud Run, Apollo Server)
+                          └─► PWA client (Next.js, GitHub Pages)
 ```
 
----
-
-## Rajapintaperiaatteet
+## Roolijako
 
 | Polku | Teknologia | Vastuu |
 |---|---|---|
 | Oura-data sisään | MQTT | Telemetria, raakadata, ingest |
-| Payload-datan luku ja kirjoitus | GraphQL | Kaikki sovellusdata (queryt + mutaatiot) |
-| Autentikointi | Firebase Auth SDK | `signInWithGoogle()`, `onAuthStateChanged()` |
-| Realtime-kuuntelu (tarvittaessa) | Firestore SDK `onSnapshot()` | Live-päivitykset UI:ssa |
-| Offline-persistointi | Firestore SDK `enableIndexedDbPersistence()` | Paikallinen jono |
-| Push-notifikaatiot | FCM SDK | `getToken()`, `onMessage()` |
-| Tiedostot | Storage SDK | `uploadBytes()`, `getDownloadURL()` |
+| Sovellusdatan luku | GraphQL (Apollo) | Queryt: readiness, sleep, activity... |
+| Sovellusdatan kirjoitus | GraphQL mutation | `logEvent`, `saveDayRecord` |
+| Autentikointi | Firebase Auth SDK | `signInWithGoogle()`, `signInWithCustomToken()` |
+| Offline-persistointi | Firestore SDK | `enableIndexedDbPersistence()` |
+| Realtime-kuuntelu | Firestore SDK | `onSnapshot()` |
+| App shell cache | Workbox 7 (CacheFirst) | JS/CSS/HTML |
+| GraphQL cache | Apollo InMemoryCache + apollo3-cache-persist | IndexedDB, 5 MB |
 
-**Firebase SDK ja Apollo Client elävät rinnakkain clientissä.**  
-SDK:n `onAuthStateChanged()` antaa tokenin, joka liitetään Apollo-linkissä GraphQL-pyyntöjen `Authorization`-headeriin.  
-SDK hoitaa infrastruktuurin — GraphQL hoitaa sovellusdatan.
-
----
-
-## Pääasiallinen datavirta
-
-### Luku (UI hakee päivädatan)
+## Autentikaatioarkkitehtuuri
 
 ```
-Apollo Client
-  → getDayRecord(date: "2026-07-20")  [GraphQL query]
-    → Apollo Server / resolveri
-      → Firestore: users/{userId}/dailyRecords/{date}  [1 luku]
-        → palauttaa DailyRecord-objektin
+Käyttäjä → Google SSO (Firebase Auth)
+  └─► Oura OAuth 2.0 (Authorization Code Grant)
+        └─► Cloud Run /auth/oura/callback
+              └─► Oura access + refresh token → Firestore users/{uid}/ouraToken
+              └─► Firebase Custom Token → frontend
+                    └─► signInWithCustomToken() → Firebase ID Token
+                          └─► kaikki Cloud Run -pyynnöt
 ```
 
-### Kirjoitus (käyttäjä kirjaa tapahtuman)
+## Palvelukartta
 
-```
-Apollo Client
-  → logEvent(type: "caffeine", amount: 150)  [GraphQL mutaatio]
-    → Apollo Server / resolveri
-      → Firestore batch write:
-          events/{eventId}  +  dailyRecords/{date}.eventSummary
-```
+| Palvelu | Cloud Run -nimi | Alue | Auth |
+|---|---|---|---|
+| MQTT → Firestore | `oura-ingest` | europe-north1 | --no-allow-unauthenticated |
+| GraphQL API | `oura-graphql` | europe-north1 | Firebase ID Token middleware |
 
-### Ingest (Oura-data sisään)
+## Ei-tuettu alusta
 
-```
-Oura API v2 webhook / polling
-  → MQTT topic: oura/user/{userId}/metrics/{type}
-    → Ingest-palvelu
-      → validoi + parsii
-        → Firestore: users/{userId}/dailyRecords/{date}  (update)
-                     users/{userId}/sleepSessions/{id}   (set)
-```
+**iOS Safari** ei ole tuettu (ks. [#21](https://github.com/jaakkokorhonen/pwa-oura/issues/21)). Tuettu alusta: Chrome Android, Chrome Desktop.
 
----
+## ADR-viitteet
 
-## Tietoturva
-
-- **Autentikointi:** Firebase Auth (Google Sign-In)
-- **GraphQL:** JWT-token headerissa, resolveri tarkistaa `userId`
-- **Firestore Security Rules:** lukee ja kirjoittaa vain oman `userId`:n alle — suojaa suoran SDK-käytön ja ingest-palvelun palvelutiliä lukuun ottamatta
-- **Ingest-palvelu:** käyttää Firebase Admin SDK:ta palvelutilillä, ei loppukäyttäjän tokenia
-
----
-
-## Viitteet
-
-- [ADR: MQTT ingest, GraphQL API](../issues/22) — issue #22
-- [Firestore-skeema](./firestore-schema.md)
-- [USE-CASES.md](../USE-CASES.md)
+- [#22](https://github.com/jaakkokorhonen/pwa-oura/issues/22) — MQTT sisään, GraphQL ulos
+- [#20](https://github.com/jaakkokorhonen/pwa-oura/issues/20) — Firebase SDK IndexedDB korvaa Background Sync
+- [#19](https://github.com/jaakkokorhonen/pwa-oura/issues/19) — Apollo InMemoryCache + Workbox 7
