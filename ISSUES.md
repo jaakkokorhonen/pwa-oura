@@ -1,40 +1,62 @@
-# GitHub Issues: Oura Weekly Cycle PWA (GitHub Pages Compatible)
+# GitHub Issues: Oura Weekly Cycle PWA (GraphQL API & GH Pages Compatible)
 
-Tämä tiedosto sisältää kuvaukset 15 issuelle, jotka on sovitettu toimimaan puhtaasti staattisessa PWA-ympäristössä (esim. GitHub Pages -isännöinti), jossa ei käytetä erillistä GraphQL-palvelinta. Tiedot tallennetaan suoraan client-side Firebase Firestore SDK:lla ja synkronoidaan Oura API:n ja BigQueryn kanssa selaimesta käsin.
+Tämä tiedosto sisältää kuvaukset 15 issuelle, jotka on sovitettu toimimaan staattisessa PWA-ympäristössä (GitHub Pages -isännöinti), jossa tietoliikenne ja tallennus tapahtuvat nopean **Firebase GraphQL API:n** kautta.
 
 ---
 
 ### Issue 1: [Feature] Readiness-kortti (Valmiuspisteet)
 **Kuvaus:**  
-Toteutetaan etusivun päävalmiuskortti, joka lukee käyttäjän päivittäisen valmiuspisteen suoraan Firestoresta (`/users/{email}/records/{date}`).
+Toteutetaan etusivun päävalmiuskortti, joka näyttää päivittäisen valmiuspisteen. Tiedot haetaan nopean GraphQL-rajapinnan kautta.
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Komponentti: Helsinki Blue Glass (`rgba(47, 74, 115, 0.15)`) pyöristetyillä kulmilla (`border-radius: 16px`).
 *   Värilogiikka: 
     *   `score >= 85`: Ensō Blue (`#A2D3E8`) - Optimaalinen.
     *   `70 <= score < 85`: Sandstone (`#E6DED3`) - Kohtalainen.
     *   `score < 70`: Living Coral (`#FC6558`) - Huomioitavaa.
-*   Ladataan Firestoresta reaaliaikaisella kuuntelijalla (`onSnapshot`).
+*   **GraphQL Query:**
+    ```graphql
+    query GetReadiness($date: String!) {
+      getDayRecord(date: $date) {
+        status
+        metricsJson # Sisältää readiness_score-arvon
+      }
+    }
+    ```
 
 ---
 
 ### Issue 2: [Feature] Readiness Contributors -paneeli
 **Kuvaus:**  
-Toteutetaan Readiness-kortin alle avautuva paneeli, joka visualisoi valmiuteen vaikuttavat osatekijät (leposyke, HRV-tasapaino, lämpötilapoikkeama, aktiivisuuskuorma).
+Toteutetaan Readiness-kortin alle avautuva paneeli, joka visualisoi valmiuteen vaikuttavat osatekijät (leposyke, HRV-tasapaino, lämpötilapoikkeama).
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Visualisointi: Vaakasuuntaiset edistymispalkit (Progress Bars) käyttäen Sandstone- ja Ensō Blue -sävyjä.
-*   Data: `DayRecord.metricsJson.contributors` Firestoresta.
+*   **GraphQL Query:**
+    ```graphql
+    query GetContributors($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # Parsitaan contributors-kentät
+      }
+    }
+    ```
 
 ---
 
 ### Issue 3: [Feature] Unen kestoindikaattori (Sleep Duration Card)
 **Kuvaus:**  
-Näytetään pääunijakson pituus tunteina ja minuutteina suhteessa asetettuun unitavoitteeseen.
+Näytetään pääunijakson pituus tunteina ja minuutteina suhteessa unitavoitteeseen.
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Visualisointi: Rengaskaavio tai edistymispalkki (Ensō Blue `#A2D3E8`), joka kuvaa prosentuaalista tavoitteen saavuttamista.
-*   Lähde: `metrics.sleep.duration` Firestoren päivittäisestä tietueesta.
+**Tekniset vaatimukset:**
+*   Visualisointi: Rengaskaavio tai edistymispalkki (Ensō Blue `#A2D3E8`).
+*   **GraphQL Query:**
+    ```graphql
+    query GetSleepDuration($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # sleep.duration
+      }
+    }
+    ```
 
 ---
 
@@ -42,9 +64,16 @@ Näytetään pääunijakson pituus tunteina ja minuutteina suhteessa asetettuun 
 **Kuvaus:**  
 Näytetään unitehokkuusprosentti (aika unessa vs. aika sängyssä).
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Visualisointi: Pieni numerokortti taustapalkilla.
-*   Laskenta: `(total_sleep_duration / time_in_bed) * 100` suoraan asiakasohjelmassa, jos arvoa ei ole esilaskettu Firestore-tietueessa.
+*   **GraphQL Query:**
+    ```graphql
+    query GetSleepEfficiency($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # sleep.efficiency
+      }
+    }
+    ```
 
 ---
 
@@ -52,9 +81,16 @@ Näytetään unitehokkuusprosentti (aika unessa vs. aika sängyssä).
 **Kuvaus:**  
 Visualisoidaan REM-unen kesto ja sen osuus kokonaisuniajasta.
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Visualisointi: Osio vaaka-palkissa, joka näyttää unijakauman (REM-osuus värillä `#A2D3E8` 0.7 opasiteetilla).
-*   Data: `metrics.sleep.rem_sleep_duration`.
+*   **GraphQL Query:**
+    ```graphql
+    query GetREMSleep($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # sleep.rem_sleep_duration
+      }
+    }
+    ```
 
 ---
 
@@ -62,9 +98,16 @@ Visualisoidaan REM-unen kesto ja sen osuus kokonaisuniajasta.
 **Kuvaus:**  
 Visualisoidaan syvän unen kesto ja sen osuus fysiologisen palautumisen indikaattorina.
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Visualisointi: Osa unijakaumapalkkia.
-*   Data: `metrics.sleep.deep_sleep_duration`.
+*   **GraphQL Query:**
+    ```graphql
+    query GetDeepSleep($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # sleep.deep_sleep_duration
+      }
+    }
+    ```
 
 ---
 
@@ -72,19 +115,33 @@ Visualisoidaan syvän unen kesto ja sen osuus fysiologisen palautumisen indikaat
 **Kuvaus:**  
 Toteutetaan yönaikaisen sykevälivaihtelun (HRV) kulkua kuvaava trendiviiva.
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Visualisointi: Google Charts LineChart tai kevyt Chart.js-integraatio tummalla teemalla.
-*   Data: Haetaan Firestoren kautta JSON-aikasarjasta `hrv.items[]` tai suoraan BigQuery REST API:n kautta selaimesta Google SSO -tokenilla.
+*   **GraphQL Query:**
+    ```graphql
+    query GetHRVTrend($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # hrv.items[] aikasarja
+      }
+    }
+    ```
 
 ---
 
 ### Issue 8: [Feature] Alin leposyke (Resting HR)
 **Kuvaus:**  
-Näytetään yön alin syke ja indikaatio siitä, kuinka varhain yön aikana alin syke saavutettiin (palautumisen ajoitus).
+Näytetään yön alin syke ja indikaatio siitä, kuinka varhain yön aikana se saavutettiin.
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Visualisointi: Numerokortti ja pieni huomioteksti ("Leposyke laski alimmilleen klo 03:15").
-*   Data: `metrics.sleep.lowest_heart_rate`.
+*   **GraphQL Query:**
+    ```graphql
+    query GetRestingHR($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # sleep.lowest_heart_rate
+      }
+    }
+    ```
 
 ---
 
@@ -92,10 +149,20 @@ Näytetään yön alin syke ja indikaatio siitä, kuinka varhain yön aikana ali
 **Kuvaus:**  
 Visualisoidaan viimeisen kofeiinitapahtuman ja pääunijakson alkamisen välinen aika.
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Visualisointi: Vaakasuora aikajana, joka laskee ja näyttää tunnit kofeiinista uneen.
-*   Väritys: Punainen (Living Coral `#FC6558`), jos väli on < 10h. Sininen (Ensō Blue `#A2D3E8`), jos väli on suositeltu.
-*   Laskenta: Asiakasohjelma hakee Firestoresta viimeisen `caffeine` -tapahtuman aikaleiman ja vertaa sitä unijakson alkuaikaan.
+**Tekniset vaatimukset:**
+*   Visualisointi: Vaakasuora aikajana, joka näyttää tunnit kofeiinista uneen. Punainen (Living Coral `#FC6558`), jos väli on < 10h. Sininen (Ensō Blue `#A2D3E8`), jos väli on turvallinen.
+*   **GraphQL Query:**
+    ```graphql
+    query GetCaffeineGap($start: String!, $end: String!) {
+      getEventsRange(start: $start, end: $end) {
+        timestamp
+        type
+        amount
+        note
+      }
+    }
+    ```
+    *Huom: Verrataan saatua kofeiiniaikatietoa `getDayRecord` -unialkuaikaan.*
 
 ---
 
@@ -103,16 +170,17 @@ Visualisoidaan viimeisen kofeiinitapahtuman ja pääunijakson alkamisen välinen
 **Kuvaus:**  
 Lisätään painike alkoholiannosten nopeaan kirjaamiseen suoraan PWA-aloitusnäytöltä.
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Käyttöliittymä: Kelluva toimintapainike (FAB) tai yläpalkin "+ Alkoholi" -nappi. Avaa modalin annosten lukumäärälle.
-*   Tallennus: Kirjoittaa suoraan Firestore-kokoelmaan `/users/{email}/events` dokumentin:
-    ```json
-    {
-      "type": "alcohol",
-      "timestamp": "ISO-TIMESTAMP",
-      "amount": 2.0,
-      "unit": "annos",
-      "note": "PWA pika-kirjaus"
+**Tekniset vaatimukset:**
+*   Käyttöliittymä: Kelluva toimintapainike (FAB) tai yläpalkin "+ Alkoholi" -nappi.
+*   **GraphQL Mutation:**
+    ```graphql
+    mutation LogAlcoholEvent($timestamp: String!, $amount: Float!, $note: String) {
+      logEvent(type: alcohol, timestamp: $timestamp, amount: $amount, note: $note) {
+        id
+        timestamp
+        type
+        amount
+      }
     }
     ```
 
@@ -122,9 +190,17 @@ Lisätään painike alkoholiannosten nopeaan kirjaamiseen suoraan PWA-aloitusnä
 **Kuvaus:**  
 Näytetään automaattinen tulkinta alkoholikirjauksen vaikutuksesta seuraavan yön palautumiseen (RHR ja HRV).
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Logiikka: Jos käyttäjä on kirjannut alkoholia edellisenä iltana, vertaillaan yön HRV-keskiarvoa ja alinta leposykettä 14 päivän keskiarvoon.
-*   Visualisointi: Varoituskortti Living Coral -reunuksella.
+**Tekniset vaatimukset:**
+*   Logiikka: Jos käyttäjällä on alkoholimerkintä, vertaillaan yön HRV-keskiarvoa ja alinta leposykettä peruslinjaan.
+*   **GraphQL Query:**
+    ```graphql
+    query GetAlcoholRecoveryEffect($date: String!) {
+      getDayRecord(date: $date) {
+        status
+        metricsJson # Sisältää alkoholivaikutusanalyysin
+      }
+    }
+    ```
 
 ---
 
@@ -132,9 +208,19 @@ Näytetään automaattinen tulkinta alkoholikirjauksen vaikutuksesta seuraavan y
 **Kuvaus:**  
 Käyttäjä voi kirjata päiväunet ja niiden keston minuutteina.
 
-**Tekniset vaatimukset (GitHub Pages):**
+**Tekniset vaatimukset:**
 *   Käyttöliittymä: "+ Päiväunet" -pikakirjauspainike.
-*   Tallennus: Kirjoittaa Firestore-kokoelmaan `/users/{email}/events` tyypillä `nap`.
+*   **GraphQL Mutation:**
+    ```graphql
+    mutation LogNapEvent($timestamp: String!, $amount: Float!, $note: String) {
+      logEvent(type: nap, timestamp: $timestamp, amount: $amount, note: $note) {
+        id
+        timestamp
+        type
+        amount
+      }
+    }
+    ```
 
 ---
 
@@ -142,17 +228,31 @@ Käyttäjä voi kirjata päiväunet ja niiden keston minuutteina.
 **Kuvaus:**  
 Arvioi päiväunien ajoituksen ja pituuden perusteella sen vaikutusta univelkaan ja tulevaan yöuneen.
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Sääntö: Jos päiväuni on kirjattu ennen klo 15:00 ja kesto on 15-25 minuuttia, näytetään positiivinen Ensō Blue -palaute (voimalaite). Muussa tapauksessa näytetään suositus lyhentää tai siirtää unia.
+**Tekniset vaatimukset:**
+*   **GraphQL Query:**
+    ```graphql
+    query GetNapRecovery($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # sleep.naps ja niiden ajoitus/vaikutustiedot
+      }
+    }
+    ```
 
 ---
 
 ### Issue 14: [Feature] Recovery Cost -kuormitusmittari
 **Kuvaus:**  
-Näytetään päivittäiset Recovery Cost -pisteet, jotka kuvaavat kirjattujen stressitekijöiden (kofeiini liian myöhään, alkoholi jne.) vaikutusta.
+Näytetään päivittäiset Recovery Cost -pisteet, jotka kuvaavat kirjattujen stressitekijöiden vaikutusta.
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Laskenta: Asiakasohjelma laskee pisteet suoraan selaimessa tai lukee ne `weekly-cycle-oura-skill`:n Firestoreen kirjoittamasta `recovery_cost`-kentästä.
+**Tekniset vaatimukset:**
+*   **GraphQL Query:**
+    ```graphql
+    query GetRecoveryCost($date: String!) {
+      getDayRecord(date: $date) {
+        metricsJson # recovery_cost pistemäärä
+      }
+    }
+    ```
 
 ---
 
@@ -160,6 +260,15 @@ Näytetään päivittäiset Recovery Cost -pisteet, jotka kuvaavat kirjattujen s
 **Kuvaus:**  
 Toteutetaan vertailukortti, joka näyttää rinnakkain lauantain, sunnuntain ja maanantain Readiness- ja Sleep-pisteet.
 
-**Tekniset vaatimukset (GitHub Pages):**
-*   Visualisointi: Kolme rinnakkaista pylvästä (Google Charts tai CSS-grid), jotka havainnollistavat viikoittaista palautumisrytmiä.
-*   Data: Haetaan Firestoresta viikonlopun ja maanantain tietueet yhdellä kyselyllä.
+**Tekniset vaatimukset:**
+*   Visualisointi: Kolme rinnakkaista pylvästä (Google Charts tai CSS-grid) viikoittaisen palautumisrytmin kuvaamiseen.
+*   **GraphQL Query:**
+    ```graphql
+    query GetWeekendCycle($start: String!, $end: String!) {
+      getEventsRange(start: $start, end: $end) {
+        type
+        timestamp
+      }
+    }
+    ```
+    *Huom: Haetaan myös `getDayRecord` lauantaille, sunnuntaille ja maanantaille fysiologian vertailua varten.*
