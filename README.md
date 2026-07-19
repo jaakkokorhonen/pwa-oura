@@ -6,32 +6,58 @@ PWA-sovellus Oura-terveysdatan visualisointiin ja tapahtumien kirjaukseen. Hakee
 
 | Alusta | Tuki | Huomiot |
 |---|---|---|
-| **Chrome Android** | ✅ Täysi tuki | Suositeltu pääalusta. PWA asentuu kotinäytölle, Background Sync, Web Push |
+| **Chrome Android** | ✅ Täysi tuki | Suositeltu pääalusta. PWA asentuu kotinäytölle, offline-tuki, Web Push |
 | **Chrome Desktop** (Windows/macOS/Linux) | ✅ Täysi tuki | PWA asentuu, kaikki ominaisuudet toimivat |
 | **Edge** (Chromium) | ✅ Täysi tuki | Sama kuin Chrome |
 | **Firefox** | ⚠️ Osittainen | Service Worker toimii, PWA-installaatio rajoitettu |
-| **iOS Safari** | ❌ Ei tueta | Puuttuu: Background Sync API, luotettava IndexedDB-pysyvyys, OAuth popup standalone-tilassa |
+| **iOS Safari** | ❌ Ei tueta | Puuttuu: luotettava IndexedDB-pysyvyys, OAuth popup standalone-tilassa |
 | **Samsung Internet** | ⚠️ Osittainen | Chromium-pohjainen, pääosin toimii |
 
 ### Miksi iOS Safari ei ole tuettu
 
-Sovellus käyttää **Background Sync APIa** offline-kirjauksiin (kofeiini, alkoholi, päiväunet). iOS Safari ei tue tätä APIa, jolloin offline-tilassa tehdyt kirjaukset voivat kadota. Lisäksi iOS Safari PWA standalone-tilassa ei tue OAuth popup-flowi ja localStorage tyhjenee 7 vrk inaktiivisuuden jälkeen.
-
-Tämä on tietoinen rajaus, ei bugi. iOS-käyttäjille näytetään sovelluksessa selkeä ilmoitus.
+Sovellus käyttää Firebase SDK:n `enableIndexedDbPersistence()`-ominaisuutta offline-kirjauksiin. iOS Safari PWA standalone-tilassa ei tue OAuth popup-flowi, ja localStorage tyhjenee 7 vrk inaktiivisuuden jälkeen. Tämä on tietoinen rajaus — iOS-käyttäjille näytetään sovelluksessa selkeä ilmoitus.
 
 ## Arkkitehtuuri
 
+### Tiedonkulku (Hybridi-malli)
+
 ```
-pwa-oura (tämä repo)
-  └── PWA-client (Next.js / React + Apollo Client)
-        ├── Gmail SSO → Google OAuth 2.0 (Bearer JWT)
-        ├── GraphQL API → Cloud Run / Apollo Server
-        │     ├── Kirjoittaa: logEvent(), saveDayRecord()
-        │     └── Lukee: getDayRecord(), getEventsRange()
-        └── Näyttää: Oura-datat, tagit, trendit, N-of-1-analytiikka
+Kirjaukset (kofeiini, alkoholi, päiväunet)
+  └── Firebase SDK → Firestore
+        └── Offline: SDK jonottaa automaattisesti IndexedDB:hen
+        └── Online: Firestore trigger → Cloud Run / Skill → metricsJson-rikastus
+
+Lukukyselyt (getDayRecord, getEventsRange, HRV-aikasarjat)
+  └── Apollo Client → GraphQL API (Cloud Run) → Firestore
+        └── apollo3-cache-persist → IndexedDB (offline fallback)
+
+Reaaliaikaiset UI-päivitykset
+  └── Firestore onSnapshot() → UI
+        (automaattinen päivitys kun Skill on ajanut rikastuksen)
 ```
 
-Hostataan: [GitHub Pages](https://jaakkokorhonen.github.io/pwa-oura/)
+### Tallennuskerros
+
+| Data | Tallennus | Offline-tuki |
+|---|---|---|
+| Kirjaukset (events) | Firestore via Firebase SDK | ✅ Automaattinen IndexedDB-jono |
+| Lukukyselyt (GraphQL) | Apollo InMemoryCache + apollo3-cache-persist | ✅ IndexedDB |
+| App shell (JS/CSS) | Workbox 7 / CacheFirst | ✅ Service Worker |
+| Auth (JWT) | IndexedDB (ei localStorage) | ✅ Pysyvä |
+
+> **localStorage ei käytössä** missään kohtaa. Kaikki persistointi IndexedDB:n kautta.
+> **MQTT ei käytössä.** Reaaliaikaisuus toteutetaan Firestore `onSnapshot()`-kuuntelijoilla.
+
+### Stack
+
+```
+Frontend:  Next.js + React + Apollo Client + Firebase SDK
+Hosting:   GitHub Pages (gh-pages branch)
+API:       Cloud Run / Apollo Server / GraphQL
+DB:        Firestore
+Auth:      Google OAuth 2.0 (Gmail SSO)
+Caching:   Workbox 7 (@ducanh2912/next-pwa) + apollo3-cache-persist
+```
 
 ## Kehitys
 
