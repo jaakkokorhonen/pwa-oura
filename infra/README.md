@@ -1,46 +1,49 @@
-# infra/ — Cloud Run -perustaminen
+# infra/ — Cloud Run -infrastruktuuriskriptit
 
-Tämä hakemisto sisältää shell-skriptit `pwa-oura`-backendin perustamiseen Google Cloud Runiin.
+Tämä kansio sisältää shell-skriptit `pwa-oura`-projektin GCP-infrastruktuurin pystyttämiseen.
 
 ## Palvelut
 
-| Palvelu | Polku | Kuvaus |
-|---|---|---|
-| `oura-ingest` | `services/ingest/` | Pollaa Oura API v2:ta, lähettää MQTT:lle, kirjoittaa Firestoreen |
-| `oura-graphql` | `services/graphql/` | GraphQL-API Firestore-datan päällä |
+| Palvelu | Cloud Run -nimi | Portti | Rooli |
+|---|---|---|---|
+| MQTT → Firestore ingest | `oura-ingest` | 8080 | Tilaa MQTT-topicit, kirjoittaa Firestoreen |
+| GraphQL API | `oura-graphql` | 4000 | Apollo Server, lukee Firestorea, vaatii Firebase ID Token |
 
-## Käyttö
+## Järjestys ensiasennuksessa
 
 ```bash
-# 1. Kopioi ymptäristömuuttujat
-cp infra/.env.infra.example .env.infra
-# Täytä arvot .env.infra-tiedostoon
+# 1. Luo Artifact Registry -repositorio (kerran)
+chmod +x infra/*.sh
+./infra/setup-artifact-registry.sh
 
-# 2. Aja setup
-chmod +x infra/setup-cloud-run.sh infra/teardown-cloud-run.sh
-source .env.infra && ./infra/setup-cloud-run.sh
+# 2. Tallenna salaisuudet Secret Manageriin
+./infra/setup-secrets.sh
+
+# 3. Rakenna kuvat ja deployaa molemmat palvelut
+./infra/setup-cloud-run.sh
 ```
 
-## Esiehdot
+## Päivitys yksittäiselle palvelulle
 
-- `gcloud` CLI asennettu: https://cloud.google.com/sdk/docs/install
-- Autentikoitu: `gcloud auth login && gcloud auth application-default login`
-- Firebase-projekti olemassa
-- Oura API OAuth -sovellus rekisteröity: https://cloud.ouraring.com/oauth/applications
+```bash
+# Vain ingest
+./infra/deploy-ingest.sh
 
-## Hakemistorakenne
-
-```
-infra/
-├── setup-cloud-run.sh       # Perustaa molemmat palvelut
-├── teardown-cloud-run.sh    # Poistaa palvelut
-├── .env.infra.example       # Ymptäristömuuttujien malli
-└── README.md                # Tämä tiedosto
+# Vain GraphQL (vaihtoehtoinen tagi)
+./infra/deploy-graphql.sh v1.2.3
 ```
 
-## Liittyy issueihin
+## Ympäristömuuttujat
 
-- [#22](../../../issues/22) ADR: arkkitehtuuripäätös
-- [#24](../../../issues/24) MQTT → Firestore ingest-palvelu
-- [#25](../../../issues/25) GraphQL-skeema ja resolverit
-- [#28](../../../issues/28) Autentikointi
+| Muuttuja | Pakollinen | Oletusarvo | Kuvaus |
+|---|---|---|---|
+| `GCP_PROJECT_ID` | ✅ | `your-gcp-project-id` | GCP-projektin tunnus |
+| `GCP_REGION` | | `europe-north1` | GCP-alue (Helsinki) |
+| `MQTT_BROKER_URL` | ✅ ingest | — | MQTT-brokerin URL, esim. `mqtts://...` |
+
+## Liittyy
+
+- Issue #24 — MQTT → Firestore ingest-palvelu
+- Issue #25 — GraphQL API
+- Issue #28 — Google SSO + Oura OAuth
+- Issue #22 — ADR arkkitehtuuripäätöksestä

@@ -1,146 +1,111 @@
 #!/usr/bin/env bash
 # =============================================================================
-# pwa-oura — Cloud Run perustaminen
-# Ajettava kerran per projekti / per environment.
-#
-# Esiehdot:
-#   - gcloud CLI asennettu ja autentikoitu
-#   - Firebase-projekti olemassa
-#   - .env.infra täytetty (katso .env.infra.example)
+# infra/setup-cloud-run.sh
+# Perustaa Cloud Run -palvelut pwa-oura -projektille.
 #
 # Käyttö:
 #   chmod +x infra/setup-cloud-run.sh
-#   source .env.infra && ./infra/setup-cloud-run.sh
+#   ./infra/setup-cloud-run.sh
+#
+# Esivaatimukset:
+#   - gcloud CLI asennettu ja autentikoitu (gcloud auth login)
+#   - PROJECT_ID asetettu alla tai ympäristömuuttujana
+#   - Artifact Registry -repositorio luotu (tai aja setup-artifact-registry.sh ensin)
 # =============================================================================
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Muuttujat — aseta .env.infra-tiedostossa tai vie ymptäristömuuttujina
+# Konfiguraatio — muuta tarvittaessa
 # ---------------------------------------------------------------------------
-PROJECT_ID="${GCP_PROJECT_ID}"
-REGION="${GCP_REGION:-europe-north1}"
+PROJECT_ID="${GCP_PROJECT_ID:-your-gcp-project-id}"
+REGION="${GCP_REGION:-europe-north1}"          # Helsinki
+ARTIFACT_REPO="pwa-oura"
+IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}"
+
 INGEST_SERVICE="oura-ingest"
 GRAPHQL_SERVICE="oura-graphql"
-FIREBASE_PROJECT="${FIREBASE_PROJECT_ID:-$PROJECT_ID}"
-MQTT_BROKER_URL="${MQTT_BROKER_URL}"          # esim. mqtt://broker.example.com:1883
-MQTT_TOPIC_PREFIX="${MQTT_TOPIC_PREFIX:-oura}" # esim. oura/user/{uid}/metrics/{type}
-OURA_CLIENT_ID="${OURA_CLIENT_ID}"
-OURA_CLIENT_SECRET="${OURA_CLIENT_SECRET}"
 
-echo "⭐  Projekti : $PROJECT_ID"
-echo "⭐  Alue     : $REGION"
+# Firestore/MQTT -ympäristömuuttujat — täytä tai vie Secret Manageriin
+MQTT_BROKER_URL="${MQTT_BROKER_URL:-mqtt://localhost:1883}"
+FIREBASE_PROJECT="${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
-# 1. Ota tarvittavat API:t käyttöön
+echo "[1/5] Asetetaan aktiivinen projekti: ${PROJECT_ID}"
+gcloud config set project "${PROJECT_ID}"
+
 # ---------------------------------------------------------------------------
-echo "\n→ Otetaan GCP API:t käyttöön..."
+echo "[2/5] Aktivoidaan tarvittavat API:t"
 gcloud services enable \
   run.googleapis.com \
-  cloudbuild.googleapis.com \
-  secretmanager.googleapis.com \
+  artifactregistry.googleapis.com \
   firestore.googleapis.com \
-  --project="$PROJECT_ID"
+  secretmanager.googleapis.com \
+  cloudscheduler.googleapis.com \
+  --project="${PROJECT_ID}"
 
 # ---------------------------------------------------------------------------
-# 2. Tallenna salaisuudet Secret Manageriin
-# ---------------------------------------------------------------------------
-echo "\n→ Tallennetaan salaisuudet Secret Manageriin..."
+echo "[3/5] Rakennetaan ja pushataan Docker-kuvat Artifact Registryyn"
 
-echo -n "$OURA_CLIENT_ID" | gcloud secrets create oura-client-id \
-  --data-file=- --project="$PROJECT_ID" 2>/dev/null || \
-  echo -n "$OURA_CLIENT_ID" | gcloud secrets versions add oura-client-id \
-    --data-file=- --project="$PROJECT_ID"
+# Ingest-palvelu
+echo "  → Rakennetaan ${INGEST_SERVICE}"
+docker build \
+  -t "${IMAGE_BASE}/${INGEST_SERVICE}:latest" \
+  -f services/ingest/Dockerfile \
+  services/ingest/
+docker push "${IMAGE_BASE}/${INGEST_SERVICE}:latest"
 
-echo -n "$OURA_CLIENT_SECRET" | gcloud secrets create oura-client-secret \
-  --data-file=- --project="$PROJECT_ID" 2>/dev/null || \
-  echo -n "$OURA_CLIENT_SECRET" | gcloud secrets versions add oura-client-secret \
-    --data-file=- --project="$PROJECT_ID"
-
-echo -n "$MQTT_BROKER_URL" | gcloud secrets create mqtt-broker-url \
-  --data-file=- --project="$PROJECT_ID" 2>/dev/null || \
-  echo -n "$MQTT_BROKER_URL" | gcloud secrets versions add mqtt-broker-url \
-    --data-file=- --project="$PROJECT_ID"
-
-# ---------------------------------------------------------------------------
-# 3. Service Account ingest-palvelulle
-# ---------------------------------------------------------------------------
-INGEST_SA="oura-ingest-sa@${PROJECT_ID}.iam.gserviceaccount.com"
-echo "\n→ Luodaan service account: $INGEST_SA"
-gcloud iam service-accounts create oura-ingest-sa \
-  --display-name="Oura Ingest Service" \
-  --project="$PROJECT_ID" 2>/dev/null || echo "  (jo olemassa)"
-
-# Oikeudet: Firestore + Secret Manager
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$INGEST_SA" \
-  --role="roles/datastore.user" --condition=None
-
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$INGEST_SA" \
-  --role="roles/secretmanager.secretAccessor" --condition=None
+# GraphQL-palvelu
+echo "  → Rakennetaan ${GRAPHQL_SERVICE}"
+docker build \
+  -t "${IMAGE_BASE}/${GRAPHQL_SERVICE}:latest" \
+  -f services/graphql/Dockerfile \
+  services/graphql/
+docker push "${IMAGE_BASE}/${GRAPHQL_SERVICE}:latest"
 
 # ---------------------------------------------------------------------------
-# 4. Service Account GraphQL-palvelulle
-# ---------------------------------------------------------------------------
-GRAPHQL_SA="oura-graphql-sa@${PROJECT_ID}.iam.gserviceaccount.com"
-echo "\n→ Luodaan service account: $GRAPHQL_SA"
-gcloud iam service-accounts create oura-graphql-sa \
-  --display-name="Oura GraphQL Service" \
-  --project="$PROJECT_ID" 2>/dev/null || echo "  (jo olemassa)"
+echo "[4/5] Deployataan Cloud Run -palvelut"
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$GRAPHQL_SA" \
-  --role="roles/datastore.user" --condition=None
-
-# ---------------------------------------------------------------------------
-# 5. Deploy ingest-palvelu Cloud Runiin
-#    HUOM: rakentaa imagen Cloud Buildilla suoraan lähdekoodista
-# ---------------------------------------------------------------------------
-echo "\n→ Deploytaan $INGEST_SERVICE ..."
-gcloud run deploy "$INGEST_SERVICE" \
-  --source="./services/ingest" \
-  --region="$REGION" \
-  --project="$PROJECT_ID" \
-  --service-account="$INGEST_SA" \
+# Ingest — tarvitsee MQTT-osoitteen ja Firestore-projektin
+gcloud run deploy "${INGEST_SERVICE}" \
+  --image="${IMAGE_BASE}/${INGEST_SERVICE}:latest" \
+  --region="${REGION}" \
+  --platform=managed \
   --no-allow-unauthenticated \
-  --set-env-vars="FIREBASE_PROJECT=$FIREBASE_PROJECT,MQTT_TOPIC_PREFIX=$MQTT_TOPIC_PREFIX" \
-  --set-secrets="OURA_CLIENT_ID=oura-client-id:latest,OURA_CLIENT_SECRET=oura-client-secret:latest,MQTT_BROKER_URL=mqtt-broker-url:latest" \
-  --memory="512Mi" \
-  --cpu="1" \
-  --min-instances="1" \
-  --max-instances="10" \
-  --port="8080"
+  --set-env-vars="MQTT_BROKER_URL=${MQTT_BROKER_URL},FIREBASE_PROJECT=${FIREBASE_PROJECT}" \
+  --memory=256Mi \
+  --cpu=1 \
+  --min-instances=1 \
+  --max-instances=3 \
+  --port=8080
 
-# ---------------------------------------------------------------------------
-# 6. Deploy GraphQL-palvelu Cloud Runiin
-# ---------------------------------------------------------------------------
-echo "\n→ Deploytaan $GRAPHQL_SERVICE ..."
-gcloud run deploy "$GRAPHQL_SERVICE" \
-  --source="./services/graphql" \
-  --region="$REGION" \
-  --project="$PROJECT_ID" \
-  --service-account="$GRAPHQL_SA" \
+# GraphQL — julkinen endpoint (autentikointi Firebase ID Tokenilla middlewaressa)
+gcloud run deploy "${GRAPHQL_SERVICE}" \
+  --image="${IMAGE_BASE}/${GRAPHQL_SERVICE}:latest" \
+  --region="${REGION}" \
+  --platform=managed \
   --allow-unauthenticated \
-  --set-env-vars="FIREBASE_PROJECT=$FIREBASE_PROJECT" \
-  --memory="256Mi" \
-  --cpu="1" \
-  --min-instances="0" \
-  --max-instances="10" \
-  --port="4000"
+  --set-env-vars="FIREBASE_PROJECT=${FIREBASE_PROJECT}" \
+  --memory=512Mi \
+  --cpu=1 \
+  --min-instances=0 \
+  --max-instances=5 \
+  --port=4000
 
 # ---------------------------------------------------------------------------
-# 7. Tulosta palvelujen URL:t
-# ---------------------------------------------------------------------------
-echo "\n✅ Valmis!"
-INGEST_URL=$(gcloud run services describe "$INGEST_SERVICE" \
-  --region="$REGION" --project="$PROJECT_ID" \
-  --format="value(status.url)")
-GRAPHQL_URL=$(gcloud run services describe "$GRAPHQL_SERVICE" \
-  --region="$REGION" --project="$PROJECT_ID" \
-  --format="value(status.url)")
+echo "[5/5] Haetaan palveluiden URL:t"
+INGEST_URL=$(gcloud run services describe "${INGEST_SERVICE}" \
+  --region="${REGION}" --format='value(status.url)')
+GRAPHQL_URL=$(gcloud run services describe "${GRAPHQL_SERVICE}" \
+  --region="${REGION}" --format='value(status.url)')
 
-echo "  Ingest URL  : $INGEST_URL"
-echo "  GraphQL URL : $GRAPHQL_URL"
 echo ""
-echo "Muista lisätä GraphQL URL Firebase Hosting rewrites -sääntöön (firebase.json):"
-echo '  { "source": "/graphql", "run": { "serviceId": "oura-graphql" } }'
+echo "=================================================================="
+echo "✅  Cloud Run -palvelut käynnissä:"
+echo "   Ingest:   ${INGEST_URL}"
+echo "   GraphQL:  ${GRAPHQL_URL}/graphql"
+echo "=================================================================="
+echo ""
+echo "Seuraavat vaiheet:"
+echo "  1. Tallenna GraphQL URL ympäristömuuttujaan NEXT_PUBLIC_GRAPHQL_URL"
+echo "  2. Lisää MQTT_BROKER_URL Secret Manageriin (ks. infra/setup-secrets.sh)"
+echo "  3. Tarkista IAM: ingest-palvelulla oikeus kirjoittaa Firestoreen"
